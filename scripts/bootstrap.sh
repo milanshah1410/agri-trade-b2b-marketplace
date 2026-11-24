@@ -32,7 +32,7 @@ php artisan --version --no-ansi
 echo "==> Installing PHP packages"
 composer require filament/filament spatie/laravel-permission inertiajs/inertia-laravel \
   --with-all-dependencies --no-interaction --no-ansi
-composer show --no-ansi filament/filament spatie/laravel-permission inertiajs/inertia-laravel laravel/framework | grep -E '^(name|versions)'
+for pkg in laravel/framework filament/filament spatie/laravel-permission inertiajs/inertia-laravel; do composer show --no-ansi "$pkg" | grep -E '^(name|versions)'; done
 
 echo "==> Installing JS packages"
 npm install --no-audit --no-fund
