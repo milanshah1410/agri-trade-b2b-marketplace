@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NO_COLOR: '1'
+      COMPOSER_NO_INTERACTION: '1'
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, bcmath, gd, zip, pdo_sqlite, sqlite3, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate Laravel project (first run only)
+        id: scaffold
+        if: ${{ hashFiles('artisan') == '' }}
+        shell: bash
+        run: |
+          bash scripts/bootstrap.sh 2>&1 | tee -a /tmp/ci.log
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: ${{ steps.scaffold.outputs.generated != 'true' }}
+        shell: bash
+        run: |
+          composer install --no-interaction --prefer-dist --no-ansi 2>&1 | tee -a /tmp/ci.log
+          npm ci --no-audit --no-fund 2>&1 | tee -a /tmp/ci.log
+
+      - name: Prepare environment
+        shell: bash
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction --no-ansi 2>&1 | tee -a /tmp/ci.log
+
+      - name: Build frontend
+        shell: bash
+        run: npm run build 2>&1 | tee -a /tmp/ci.log
+
+      - name: Migrate and seed (smoke test)
+        shell: bash
+        env:
+          SUPER_ADMIN_EMAIL: ci-admin@example.com
+        run: |
+          export SUPER_ADMIN_PASSWORD="Ci-$(openssl rand -hex 12)"
+          touch /tmp/ci.sqlite
+          DB_DATABASE=/tmp/ci.sqlite php artisan migrate:fresh --seed --force --no-ansi 2>&1 | tee -a /tmp/ci.log
+
+      - name: Run tests
+        shell: bash
+        run: php artisan test --no-ansi 2>&1 | tee -a /tmp/ci.log
+
+      - name: Report failure details as annotations
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' /tmp/ci.log | tail -n 150 > /tmp/ci-tail.log || true
+          split -l 25 /tmp/ci-tail.log /tmp/chunk_ || true
+          for f in /tmp/chunk_*; do
+            msg=$(python3 -c "import sys; print(sys.stdin.read().replace('%','%25').replace('\r','').replace('\n','%0A'))" < "$f")
+            echo "::error title=CI log $(basename "$f")::$msg"
+          done
+
+      - name: Commit generated project
+        if: ${{ success() && steps.scaffold.outputs.generated == 'true' && github.event_name == 'push' }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: generate Laravel project and Phase 2 foundation (via CI)"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

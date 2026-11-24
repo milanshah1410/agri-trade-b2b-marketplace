@@ -1,0 +1,16 @@
+/vendor
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-journal
+.phpunit.result.cache
+.idea
+.vscode
+.DS_Store

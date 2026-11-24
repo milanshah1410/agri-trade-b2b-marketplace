@@ -1,0 +1,24 @@
+<?php
+
+namespace App\Providers;
+
+use App\Enums\RoleName;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        //
+    }
+
+    public function boot(): void
+    {
+        // Super Admin implicitly passes every authorization check.
+        Gate::before(function (?User $user) {
+            return $user?->hasRole(RoleName::SuperAdmin->value) ? true : null;
+        });
+    }
+}
